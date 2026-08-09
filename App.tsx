@@ -317,7 +317,7 @@ const App: React.FC = () => {
                             </div>
                             <div className="pt-2 border-t border-red-200/60 flex items-center justify-between flex-wrap gap-2">
                               <button
-                                onClick={handleGenerateQuiz}
+                                onClick={handleGenerate}
                                 className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center gap-2 active:scale-95"
                               >
                                 <RefreshCw className="w-4 h-4" /> Thử lại ngay
