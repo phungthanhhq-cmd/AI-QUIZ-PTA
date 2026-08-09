@@ -40,6 +40,16 @@
         background: rgba(255, 255, 255, 0.5); 
       }
     </style>
+    <script>
+      window.global = window;
+      if (typeof window.process === 'undefined') {
+        window.process = {
+          env: {},
+          version: '',
+          nextTick: function(fn) { setTimeout(fn, 0); }
+        };
+      }
+    </script>
   </head>
   <body class="text-slate-900 font-sans antialiased">
     <div id="root"></div>
