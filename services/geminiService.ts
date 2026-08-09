@@ -171,7 +171,7 @@ export const generateQuizFromContent = async (
     }
   };
 
-  const modelsToTry = ['gemini-3.6-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+  const modelsToTry = ['gemini-2.5-flash', 'gemini-2.0-flash'];
 
   const processResponse = (responseText: string | undefined): QuizQuestion[] => {
     if (!responseText) throw new Error("Empty response");
@@ -251,13 +251,19 @@ export const generateQuizFromContent = async (
     }
   }
 
-  const errMsg = lastClientError?.message || '';
-  if (errMsg.includes('API key not valid') || errMsg.includes('API_KEY_INVALID')) {
-    throw new Error('API Key không hợp lệ. Vui lòng bấm vào nút "API Key" góc trên để nhập lại API Key từ Google AI Studio.');
-  }
-  if (errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('429')) {
-    throw new Error('API Key này đã hết hạn ngạch truy cập trong ngày. Vui lòng đổi API Key khác hoặc thử lại sau.');
+  const rawErrStr = typeof lastClientError === 'string' ? lastClientError : (lastClientError?.message || JSON.stringify(lastClientError || {}));
+
+  if (rawErrStr.includes('denied access') || rawErrStr.includes('PERMISSION_DENIED') || rawErrStr.includes('403')) {
+    throw new Error('Dự án hoặc API Key này đã bị Google tạm khóa / từ chối quyền truy cập (Lỗi 403 Permission Denied: Your project has been denied access).\n\n👉 Cách xử lý: Vui lòng bấm vào nút "API Key: Đã lưu" ở góc trên giao diện để dán một API Key mới lấy từ Google AI Studio (bằng tài khoản Gmail khác).');
   }
 
-  throw new Error(errMsg ? `Lỗi tạo câu hỏi: ${errMsg}` : "Không thể tạo câu hỏi. Vui lòng kiểm tra lại tài liệu nguồn hoặc API Key.");
+  if (rawErrStr.includes('API key not valid') || rawErrStr.includes('API_KEY_INVALID') || rawErrStr.includes('400')) {
+    throw new Error('API Key không hợp lệ hoặc bị dán sai ký tự.\n\n👉 Cách xử lý: Bấm nút "API Key" ở góc trên giao diện để kiểm tra và dán lại mã API Key chính xác từ Google AI Studio.');
+  }
+
+  if (rawErrStr.includes('RESOURCE_EXHAUSTED') || rawErrStr.includes('429')) {
+    throw new Error('API Key này đã đạt giới hạn gọi miễn phí trong ngày của Google (429 Too Many Requests).\n\n👉 Cách xử lý: Vui lòng đổi sang một API Key của tài khoản Gmail khác hoặc thử lại sau vài phút.');
+  }
+
+  throw new Error(`Không thể tạo câu hỏi từ Gemini AI: ${rawErrStr}`);
 };

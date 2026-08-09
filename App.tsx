@@ -310,9 +310,23 @@ const App: React.FC = () => {
                 {/* Content Area */}
                 <div className="flex-1 overflow-y-auto p-6 scroll-smooth">
                     {error && (
-                        <div className="bg-red-50 border border-red-200 text-red-700 p-6 rounded-xl shadow-lg animate-in slide-in-from-top-2">
-                            <h3 className="font-bold text-lg mb-2">Đã xảy ra lỗi</h3>
-                            <p>{error}</p>
+                        <div className="bg-red-50/95 border-2 border-red-200 text-red-800 p-6 rounded-2xl shadow-xl animate-in slide-in-from-top-2 space-y-4">
+                            <div className="flex items-start gap-3">
+                              <div className="p-2 bg-red-100 rounded-xl text-red-600 font-bold">⚠️</div>
+                              <div className="flex-1">
+                                <h3 className="font-bold text-lg text-red-900 mb-1">Cần chú ý</h3>
+                                <p className="text-xs sm:text-sm leading-relaxed whitespace-pre-line text-red-800">{error}</p>
+                              </div>
+                            </div>
+                            <div className="pt-2 border-t border-red-200/60 flex items-center justify-between flex-wrap gap-2">
+                              <span className="text-xs text-red-600 font-medium">Nếu nguyên nhân do API Key, bạn có thể cập nhật key mới tại đây:</span>
+                              <button
+                                onClick={() => setIsApiKeyModalOpen(true)}
+                                className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-bold rounded-xl text-xs shadow-md shadow-amber-500/20 transition-all flex items-center gap-1.5 active:scale-95"
+                              >
+                                <Key className="w-4 h-4" /> Cấu hình / Thay API Key mới
+                              </button>
+                            </div>
                         </div>
                     )}
 
