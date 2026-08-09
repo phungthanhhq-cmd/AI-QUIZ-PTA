@@ -130,6 +130,9 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKeySaved }
             <li>Đăng nhập tài khoản Gmail của bạn và chọn <strong>"Create API key"</strong>.</li>
             <li>Sao chép mã API Key (dạng <code>AQ.Ab8...</code> hoặc <code>AIzaSy...</code>) và dán vào ô bên dưới.</li>
           </ol>
+          <p className="text-[11px] text-amber-700 bg-amber-50/80 p-2 rounded-lg border border-amber-200/60 mt-1">
+            💡 <strong>Mẹo:</strong> Nếu bạn bị lỗi <i>403 Permission Denied (Project denied access)</i>, do tài khoản Google Cloud cũ đã bị khóa/hạn chế. Hãy đổi sang một <strong>tài khoản Gmail khác</strong> để tạo API Key mới.
+          </p>
         </div>
 
         {/* Input Form */}

@@ -56,20 +56,22 @@ async function startServer() {
   app.post('/api/generate-quiz', async (req, res) => {
     try {
       const { promptText, fileParts, optionCount, isTrueFalse, userApiKey } = req.body;
-      const apiKey = userApiKey || process.env.GEMINI_API_KEY || process.env.API_KEY;
 
-      if (!apiKey) {
-        return res.status(400).json({ error: 'Chưa có API Key. Vui lòng bấm "Cấu hình API Key" ở góc trên ứng dụng để nhập API Key cá nhân của bạn.' });
+      // Prepare keys to try in order: user key (if provided) -> system GEMINI_API_KEY -> system API_KEY
+      const keysToTry: string[] = [];
+      if (userApiKey && typeof userApiKey === 'string' && userApiKey.trim()) {
+        keysToTry.push(userApiKey.trim());
+      }
+      if (process.env.GEMINI_API_KEY && !keysToTry.includes(process.env.GEMINI_API_KEY)) {
+        keysToTry.push(process.env.GEMINI_API_KEY);
+      }
+      if (process.env.API_KEY && !keysToTry.includes(process.env.API_KEY)) {
+        keysToTry.push(process.env.API_KEY);
       }
 
-      const ai = new GoogleGenAI({ 
-        apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
-      });
+      if (keysToTry.length === 0) {
+        return res.status(400).json({ error: 'Chưa có API Key. Vui lòng bấm "Cấu hình API Key" ở góc trên ứng dụng để nhập API Key cá nhân của bạn.' });
+      }
 
       const optCount = optionCount || 4;
       const optionKeys = Array.from({ length: optCount }, (_, i) => String.fromCharCode(65 + i));
@@ -99,36 +101,45 @@ async function startServer() {
         }
       };
 
-      const modelsToTry = ['gemini-2.5-flash', 'gemini-2.0-flash'];
-
-      const callModel = async (modelName: string) => {
-        return await ai.models.generateContent({
-          model: modelName,
-          contents: {
-            parts: [...(fileParts || []), { text: promptText }]
-          },
-          config: {
-            systemInstruction: SYSTEM_INSTRUCTION,
-            responseMimeType: "application/json",
-            responseSchema: dynamicQuizSchema,
-            temperature: 0.4,
-          }
-        });
-      };
+      const modelsToTry = ['gemini-2.5-flash', 'gemini-flash-latest'];
 
       let responseText: string | undefined;
       let lastError: any = null;
 
-      for (const modelName of modelsToTry) {
-        try {
-          const res = await callModel(modelName);
-          if (res.text) {
-            responseText = res.text;
-            break;
+      // Loop through available keys (user key first, then system fallback keys)
+      keyLoop: for (const key of keysToTry) {
+        const ai = new GoogleGenAI({ 
+          apiKey: key,
+          httpOptions: {
+            headers: {
+              'User-Agent': 'aistudio-build',
+            }
           }
-        } catch (e: any) {
-          console.warn(`Model ${modelName} failed on server proxy:`, e?.message || e);
-          lastError = e;
+        });
+
+        for (const modelName of modelsToTry) {
+          try {
+            const res = await ai.models.generateContent({
+              model: modelName,
+              contents: {
+                parts: [...(fileParts || []), { text: promptText }]
+              },
+              config: {
+                systemInstruction: SYSTEM_INSTRUCTION,
+                responseMimeType: "application/json",
+                responseSchema: dynamicQuizSchema,
+                temperature: 0.4,
+              }
+            });
+
+            if (res.text) {
+              responseText = res.text;
+              break keyLoop; // Successfully generated content!
+            }
+          } catch (e: any) {
+            console.warn(`Key (${key.substring(0, 6)}...) with model ${modelName} failed on server proxy:`, e?.message || e);
+            lastError = e;
+          }
         }
       }
 
@@ -137,19 +148,19 @@ async function startServer() {
         
         if (rawErrStr.includes('denied access') || rawErrStr.includes('PERMISSION_DENIED') || rawErrStr.includes('403')) {
           return res.status(403).json({ 
-            error: 'Dự án hoặc API Key này đã bị Google tạm khóa / từ chối quyền truy cập (Lỗi 403 Permission Denied: Your project has been denied access).\n\n👉 Cách xử lý: Vui lòng bấm vào nút "API Key: Đã lưu" ở góc trên giao diện để dán một API Key mới lấy từ Google AI Studio (bằng tài khoản Gmail khác).' 
+            error: 'API Key hiện tại không có quyền truy cập Gemini API (403 Permission Denied). Hệ thống đã thử các khóa dự phòng nhưng không thành công. Bạn có thể thay API Key mới trong mục "Cấu hình API Key".' 
           });
         }
 
         if (rawErrStr.includes('API key not valid') || rawErrStr.includes('API_KEY_INVALID') || rawErrStr.includes('400')) {
           return res.status(400).json({ 
-            error: 'API Key không hợp lệ hoặc bị dán sai ký tự.\n\n👉 Cách xử lý: Bấm nút "API Key" ở góc trên giao diện để kiểm tra và dán lại mã API Key chính xác từ Google AI Studio.' 
+            error: 'API Key dán bị sai cú pháp. Vui lòng bấm "Cấu hình API Key" để kiểm tra lại.' 
           });
         }
 
         if (rawErrStr.includes('RESOURCE_EXHAUSTED') || rawErrStr.includes('429')) {
           return res.status(429).json({ 
-            error: 'API Key này đã đạt giới hạn gọi miễn phí trong ngày của Google (429 Too Many Requests).\n\n👉 Cách xử lý: Vui lòng đổi sang một API Key của tài khoản Gmail khác hoặc thử lại sau vài phút.' 
+            error: 'API Key này đã đạt giới hạn lượt gọi trong ngày (Quota Exceeded). Vui lòng thử lại sau hoặc nhập API Key khác.' 
           });
         }
 

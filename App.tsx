@@ -103,9 +103,6 @@ const App: React.FC = () => {
     } catch (err: any) {
       const errMsg = err.message || "Đã xảy ra lỗi không xác định.";
       setError(errMsg);
-      if (errMsg.includes("API Key") || !getUserApiKey()) {
-        setIsApiKeyModalOpen(true);
-      }
     } finally {
       setIsGenerating(false);
     }
