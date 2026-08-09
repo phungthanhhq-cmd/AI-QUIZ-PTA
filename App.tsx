@@ -9,7 +9,7 @@ import ApiKeyModal, { getUserApiKey } from './components/ApiKeyModal';
 import StudentQuizView from './components/StudentQuizView';
 import { generateQuizFromContent } from './services/geminiService';
 import { decodeQuizFromUrl, SharedQuizPackage } from './utils/shareUtils';
-import { Download, History, BrainCircuit, Copy, Check, Share2, Key } from 'lucide-react';
+import { Download, History, BrainCircuit, Copy, Check, Share2, Key, RefreshCw } from 'lucide-react';
 
 const App: React.FC = () => {
   // --- State ---
@@ -311,17 +311,22 @@ const App: React.FC = () => {
                             <div className="flex items-start gap-3">
                               <div className="p-2 bg-red-100 rounded-xl text-red-600 font-bold">⚠️</div>
                               <div className="flex-1">
-                                <h3 className="font-bold text-lg text-red-900 mb-1">Cần chú ý</h3>
+                                <h3 className="font-bold text-lg text-red-900 mb-1">Thông báo</h3>
                                 <p className="text-xs sm:text-sm leading-relaxed whitespace-pre-line text-red-800">{error}</p>
                               </div>
                             </div>
                             <div className="pt-2 border-t border-red-200/60 flex items-center justify-between flex-wrap gap-2">
-                              <span className="text-xs text-red-600 font-medium">Nếu nguyên nhân do API Key, bạn có thể cập nhật key mới tại đây:</span>
+                              <button
+                                onClick={handleGenerateQuiz}
+                                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center gap-2 active:scale-95"
+                              >
+                                <RefreshCw className="w-4 h-4" /> Thử lại ngay
+                              </button>
                               <button
                                 onClick={() => setIsApiKeyModalOpen(true)}
-                                className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-bold rounded-xl text-xs shadow-md shadow-amber-500/20 transition-all flex items-center gap-1.5 active:scale-95"
+                                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-xl text-xs transition-all flex items-center gap-1.5 active:scale-95"
                               >
-                                <Key className="w-4 h-4" /> Cấu hình / Thay API Key mới
+                                <Key className="w-4 h-4 text-slate-500" /> Cấu hình API Key (Nếu cần)
                               </button>
                             </div>
                         </div>

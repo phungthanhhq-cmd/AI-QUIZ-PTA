@@ -223,19 +223,38 @@ export const generateQuizFromContent = async (
     }
   };
 
-  const callModel = async (modelName: string) => {
-    return await ai.models.generateContent({
-      model: modelName,
-      contents: {
-        parts: [...fileParts, { text: promptText }]
-      },
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        responseSchema: dynamicQuizSchema,
-        temperature: 0.4,
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const callModel = async (modelName: string, maxRetries = 2) => {
+    let attempt = 0;
+    while (attempt <= maxRetries) {
+      try {
+        return await ai.models.generateContent({
+          model: modelName,
+          contents: {
+            parts: [...fileParts, { text: promptText }]
+          },
+          config: {
+            systemInstruction: SYSTEM_INSTRUCTION,
+            responseMimeType: "application/json",
+            responseSchema: dynamicQuizSchema,
+            temperature: 0.4,
+          }
+        });
+      } catch (err: any) {
+        attempt++;
+        const errStr = String(err?.message || err);
+        const isRateLimit = errStr.includes('429') || errStr.includes('RESOURCE_EXHAUSTED');
+        const isTransient = errStr.includes('500') || errStr.includes('503') || errStr.includes('504');
+        
+        if ((isRateLimit || isTransient) && attempt <= maxRetries) {
+          console.warn(`[Client Retry ${attempt}/${maxRetries}] Model ${modelName} hit limit. Retrying in ${1500 * attempt}ms...`);
+          await sleep(1500 * attempt);
+          continue;
+        }
+        throw err;
       }
-    });
+    }
   };
 
   let lastClientError: any = null;

@@ -101,25 +101,15 @@ async function startServer() {
         }
       };
 
-      const modelsToTry = ['gemini-2.5-flash', 'gemini-flash-latest'];
+      // Function to delay execution
+      const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-      let responseText: string | undefined;
-      let lastError: any = null;
-
-      // Loop through available keys (user key first, then system fallback keys)
-      keyLoop: for (const key of keysToTry) {
-        const ai = new GoogleGenAI({ 
-          apiKey: key,
-          httpOptions: {
-            headers: {
-              'User-Agent': 'aistudio-build',
-            }
-          }
-        });
-
-        for (const modelName of modelsToTry) {
+      // Retry helper for 429 rate-limit or transient errors
+      const callModelWithRetry = async (ai: any, modelName: string, maxRetries = 2) => {
+        let attempt = 0;
+        while (attempt <= maxRetries) {
           try {
-            const res = await ai.models.generateContent({
+            return await ai.models.generateContent({
               model: modelName,
               contents: {
                 parts: [...(fileParts || []), { text: promptText }]
@@ -131,8 +121,44 @@ async function startServer() {
                 temperature: 0.4,
               }
             });
+          } catch (err: any) {
+            attempt++;
+            const errStr = String(err?.message || err);
+            const isRateLimit = errStr.includes('429') || errStr.includes('RESOURCE_EXHAUSTED');
+            const isTransient = errStr.includes('500') || errStr.includes('503') || errStr.includes('504');
+            
+            if ((isRateLimit || isTransient) && attempt <= maxRetries) {
+              console.warn(`[Retry ${attempt}/${maxRetries}] Model ${modelName} hit temporary limit/error. Retrying in ${1500 * attempt}ms...`);
+              await sleep(1500 * attempt);
+              continue;
+            }
+            throw err;
+          }
+        }
+      };
 
-            if (res.text) {
+      const modelsToTry = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+
+      let responseText: string | undefined;
+      let lastError: any = null;
+
+      // Loop through available keys (user key first, then system fallback keys)
+      keyLoop: for (const key of keysToTry) {
+        if (!key) continue;
+        const ai = new GoogleGenAI({ 
+          apiKey: key,
+          httpOptions: {
+            headers: {
+              'User-Agent': 'aistudio-build',
+            }
+          }
+        });
+
+        for (const modelName of modelsToTry) {
+          try {
+            const res = await callModelWithRetry(ai, modelName, 2);
+
+            if (res && res.text) {
               responseText = res.text;
               break keyLoop; // Successfully generated content!
             }
