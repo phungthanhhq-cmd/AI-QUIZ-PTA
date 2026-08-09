@@ -62,7 +62,14 @@ async function startServer() {
         return res.status(400).json({ error: 'Chưa có API Key. Vui lòng bấm "Cấu hình API Key" ở góc trên ứng dụng để nhập API Key cá nhân của bạn.' });
       }
 
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = new GoogleGenAI({ 
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
 
       const optCount = optionCount || 4;
       const optionKeys = Array.from({ length: optCount }, (_, i) => String.fromCharCode(65 + i));
@@ -92,7 +99,7 @@ async function startServer() {
         }
       };
 
-      const modelsToTry = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+      const modelsToTry = ['gemini-3.6-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
 
       const callModel = async (modelName: string) => {
         return await ai.models.generateContent({
