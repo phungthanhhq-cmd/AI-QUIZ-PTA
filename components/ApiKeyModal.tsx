@@ -47,8 +47,8 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKeySaved }
       return;
     }
 
-    if (!trimmed.startsWith('AIza')) {
-      setError('API Key của Google Gemini thường bắt đầu bằng chữ "AIza...". Vui lòng kiểm tra lại!');
+    if (trimmed.length < 10) {
+      setError('Mã API Key không hợp lệ (quá ngắn). Vui lòng dán chính xác toàn bộ mã API Key.');
       return;
     }
 
@@ -128,7 +128,7 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKeySaved }
           <ol className="list-decimal list-inside text-[11px] text-slate-600 space-y-1 pt-1">
             <li>Bấm nút <strong>"Lấy API Key ngay"</strong> ở trên để mở Google AI Studio.</li>
             <li>Đăng nhập tài khoản Gmail của bạn và chọn <strong>"Create API key"</strong>.</li>
-            <li>Sao chép mã API Key (dạng <code>AIzaSy...</code>) và dán vào ô bên dưới.</li>
+            <li>Sao chép mã API Key (dạng <code>AQ.Ab8...</code> hoặc <code>AIzaSy...</code>) và dán vào ô bên dưới.</li>
           </ol>
         </div>
 
@@ -142,7 +142,7 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKeySaved }
               type={showKey ? 'text' : 'password'}
               value={inputKey}
               onChange={(e) => setInputKey(e.target.value)}
-              placeholder="Dán mã API Key của bạn (bắt đầu bằng AIza...)"
+              placeholder="Dán mã API Key của bạn (ví dụ: AQ.Ab8... hoặc AIza...)"
               className="w-full bg-slate-50 border border-slate-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-200 rounded-xl pl-3.5 pr-20 py-2.5 text-xs text-slate-800 font-mono outline-none transition-all"
             />
             <button
