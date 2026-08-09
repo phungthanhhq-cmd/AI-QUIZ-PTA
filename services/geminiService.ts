@@ -164,8 +164,7 @@ export const generateQuizFromContent = async (
     }
   };
 
-  const primaryModel = 'gemini-3-pro-preview';
-  const fallbackModel = 'gemini-3-flash-preview';
+  const modelsToTry = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
   const processResponse = (responseText: string | undefined): QuizQuestion[] => {
     if (!responseText) throw new Error("Empty response");
@@ -232,17 +231,26 @@ export const generateQuizFromContent = async (
     });
   };
 
-  try {
+  let lastClientError: any = null;
+  for (const modelName of modelsToTry) {
     try {
-      const response = await callModel(primaryModel);
-      return processResponse(response.text);
-    } catch (primaryError) {
-      console.warn(`Primary model (${primaryModel}) failed, retrying with fallback...`, primaryError);
-      const fallbackResponse = await callModel(fallbackModel);
-      return processResponse(fallbackResponse.text);
+      const response = await callModel(modelName);
+      if (response.text) {
+        return processResponse(response.text);
+      }
+    } catch (err: any) {
+      console.warn(`Client model ${modelName} failed:`, err?.message || err);
+      lastClientError = err;
     }
-  } catch (finalError) {
-    console.error("Gemini Generation Failed:", finalError);
-    throw new Error("Không thể tạo câu hỏi. Vui lòng kiểm tra lại tài liệu nguồn.");
   }
+
+  const errMsg = lastClientError?.message || '';
+  if (errMsg.includes('API key not valid') || errMsg.includes('API_KEY_INVALID')) {
+    throw new Error('API Key không hợp lệ. Vui lòng bấm vào nút "API Key" góc trên để nhập lại API Key từ Google AI Studio.');
+  }
+  if (errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('429')) {
+    throw new Error('API Key này đã hết hạn ngạch truy cập trong ngày. Vui lòng đổi API Key khác hoặc thử lại sau.');
+  }
+
+  throw new Error(errMsg ? `Lỗi tạo câu hỏi: ${errMsg}` : "Không thể tạo câu hỏi. Vui lòng kiểm tra lại tài liệu nguồn hoặc API Key.");
 };

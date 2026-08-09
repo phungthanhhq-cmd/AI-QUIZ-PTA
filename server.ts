@@ -92,8 +92,7 @@ async function startServer() {
         }
       };
 
-      const primaryModel = 'gemini-3-pro-preview';
-      const fallbackModel = 'gemini-3-flash-preview';
+      const modelsToTry = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
       const callModel = async (modelName: string) => {
         return await ai.models.generateContent({
@@ -111,17 +110,30 @@ async function startServer() {
       };
 
       let responseText: string | undefined;
-      try {
-        const primaryRes = await callModel(primaryModel);
-        responseText = primaryRes.text;
-      } catch (e) {
-        console.warn('Primary model failed in server proxy, trying fallback model...', e);
-        const fallbackRes = await callModel(fallbackModel);
-        responseText = fallbackRes.text;
+      let lastError: any = null;
+
+      for (const modelName of modelsToTry) {
+        try {
+          const res = await callModel(modelName);
+          if (res.text) {
+            responseText = res.text;
+            break;
+          }
+        } catch (e: any) {
+          console.warn(`Model ${modelName} failed on server proxy:`, e?.message || e);
+          lastError = e;
+        }
       }
 
       if (!responseText) {
-        return res.status(500).json({ error: 'Không nhận được phản hồi từ AI.' });
+        const errMsg = lastError?.message || 'Không thể tạo câu hỏi từ AI Gemini.';
+        if (errMsg.includes('API key not valid') || errMsg.includes('API_KEY_INVALID') || errMsg.includes('400')) {
+          return res.status(400).json({ error: 'API Key không hợp lệ hoặc không có quyền truy cập Google AI Studio. Vui lòng bấm "API Key: Đã lưu" ở góc trên để cập nhật key mới.' });
+        }
+        if (errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('429')) {
+          return res.status(429).json({ error: 'API Key này đã hết hạn ngạch truy cập miễn phí trong ngày (Quota Exceeded). Vui lòng đổi API Key mới hoặc thử lại sau.' });
+        }
+        return res.status(500).json({ error: `Lỗi AI: ${errMsg}` });
       }
 
       const rawQuestions = JSON.parse(responseText);
