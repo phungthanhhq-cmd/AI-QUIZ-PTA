@@ -42,49 +42,12 @@ export const generateQuizFromContent = async (
   files: File[],
   config: QuizConfig
 ): Promise<QuizQuestion[]> => {
-  // 1. Initialize Client
-  
-  // Use the built-in environment API Key immediately
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    throw new Error("Lỗi hệ thống: Không tìm thấy API Key mặc định.");
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
-
   const optionCount = config.optionCount || 4;
-  const optionKeys = Array.from({ length: optionCount }, (_, i) => String.fromCharCode(65 + i)); // A, B, C, D...
+  const optionKeys = Array.from({ length: optionCount }, (_, i) => String.fromCharCode(65 + i));
 
-  const dynamicQuizSchema: Schema = {
-    type: Type.ARRAY,
-    items: {
-      type: Type.OBJECT,
-      properties: {
-        id: { type: Type.INTEGER },
-        question_content: { type: Type.STRING },
-        options: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              key: { type: Type.STRING, enum: optionKeys },
-              text: { type: Type.STRING }
-            },
-            required: ["key", "text"]
-          }
-        },
-        correct_answer: { type: Type.STRING, enum: optionKeys },
-        level: { type: Type.STRING },
-      },
-      required: ["id", "question_content", "options", "correct_answer", "level"]
-    }
-  };
-
-  // 2. Prepare Payload
-  // Map files to either inlineData (Images/PDF) or text parts (DOCX)
+  // 1. Prepare Payload
   const fileParts = await Promise.all(
     files.map(async (file) => {
-      // DOCX Handling: Extract Text
       if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
         const textContent = await extractTextFromDocx(file);
         return {
@@ -92,7 +55,6 @@ export const generateQuizFromContent = async (
         };
       } 
       
-      // Image/PDF Handling: Base64
       return new Promise<any>((resolve, reject) => {
         const reader = new FileReader();
         reader.onloadend = () => {
@@ -110,7 +72,6 @@ export const generateQuizFromContent = async (
     })
   );
 
-  // Construct Prompt
   const levels = config.bloomLevels.length > 0 ? config.bloomLevels.join(", ") : "Tổng hợp";
   const isTrueFalse = config.optionCount === 2 && config.isTrueFalse;
   const optionInstruction = isTrueFalse 
@@ -137,7 +98,72 @@ export const generateQuizFromContent = async (
     Trả về kết quả dưới dạng JSON thuần túy.
   `;
 
-  // 3. Define Models (Primary & Fallback)
+  // Retrieve custom API key saved by user in browser
+  const userApiKey = typeof window !== 'undefined' ? localStorage.getItem('user_gemini_api_key') || '' : '';
+
+  // Try calling server-side API proxy route first
+  try {
+    const res = await fetch('/api/generate-quiz', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        promptText,
+        fileParts,
+        optionCount,
+        isTrueFalse,
+        userApiKey
+      })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data && Array.isArray(data.questions)) {
+        return data.questions as QuizQuestion[];
+      }
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      if (errData.error) {
+        throw new Error(errData.error);
+      }
+    }
+  } catch (apiErr: any) {
+    if (apiErr?.message) throw apiErr;
+    console.warn("Server API generate route unavailable, attempting client SDK fallback...", apiErr);
+  }
+
+  // Fallback: Client-side GoogleGenAI
+  const apiKey = userApiKey || process.env.API_KEY || process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Chưa có API Key. Vui lòng bấm 'Cấu hình API Key' ở thanh công cụ góc trên để nhập API Key cá nhân của bạn.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  const dynamicQuizSchema: Schema = {
+    type: Type.ARRAY,
+    items: {
+      type: Type.OBJECT,
+      properties: {
+        id: { type: Type.INTEGER },
+        question_content: { type: Type.STRING },
+        options: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              key: { type: Type.STRING, enum: optionKeys },
+              text: { type: Type.STRING }
+            },
+            required: ["key", "text"]
+          }
+        },
+        correct_answer: { type: Type.STRING, enum: optionKeys },
+        level: { type: Type.STRING },
+      },
+      required: ["id", "question_content", "options", "correct_answer", "level"]
+    }
+  };
+
   const primaryModel = 'gemini-3-pro-preview';
   const fallbackModel = 'gemini-3-flash-preview';
 
@@ -148,7 +174,6 @@ export const generateQuizFromContent = async (
         const questions = JSON.parse(responseText) as QuizQuestion[];
         
         return questions.map(q => {
-            // 1. Normalize math delimiters
             let processedOptions = q.options.map(opt => ({
                 ...opt,
                 text: normalizeMathDelimiters(opt.text)
@@ -156,21 +181,17 @@ export const generateQuizFromContent = async (
 
             let correctAnswerKey = q.correct_answer;
 
-            // 2. Shuffle options if NOT True/False to prevent "Always A" bias from LLM
             if (!isTrueFalse) {
-                // Mark the correct option before shuffling
                 const optionsWithFlag = processedOptions.map(opt => ({
                     ...opt,
                     isCorrect: opt.key === q.correct_answer
                 }));
 
-                // Fisher-Yates shuffle
                 for (let i = optionsWithFlag.length - 1; i > 0; i--) {
                     const j = Math.floor(Math.random() * (i + 1));
                     [optionsWithFlag[i], optionsWithFlag[j]] = [optionsWithFlag[j], optionsWithFlag[i]];
                 }
 
-                // Re-assign keys (A, B, C, D...) and find the new key for the correct answer
                 processedOptions = optionsWithFlag.map((opt, index) => {
                     const newKey = String.fromCharCode(65 + index);
                     if (opt.isCorrect) {
@@ -197,7 +218,6 @@ export const generateQuizFromContent = async (
   };
 
   const callModel = async (modelName: string) => {
-    console.log(`Attempting generation with model: ${modelName}`);
     return await ai.models.generateContent({
       model: modelName,
       contents: {
@@ -207,19 +227,17 @@ export const generateQuizFromContent = async (
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
         responseSchema: dynamicQuizSchema,
-        temperature: 0.4, // Lower temperature for more academic accuracy
+        temperature: 0.4,
       }
     });
   };
 
   try {
-    // Attempt Primary
     try {
       const response = await callModel(primaryModel);
       return processResponse(response.text);
     } catch (primaryError) {
       console.warn(`Primary model (${primaryModel}) failed, retrying with fallback...`, primaryError);
-      // Fallback
       const fallbackResponse = await callModel(fallbackModel);
       return processResponse(fallbackResponse.text);
     }

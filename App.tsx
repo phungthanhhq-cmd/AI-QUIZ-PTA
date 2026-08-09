@@ -5,10 +5,11 @@ import ConfigPanel from './components/ConfigPanel';
 import QuizCard from './components/QuizCard';
 import HistoryModal from './components/HistoryModal';
 import ShareModal from './components/ShareModal';
+import ApiKeyModal, { getUserApiKey } from './components/ApiKeyModal';
 import StudentQuizView from './components/StudentQuizView';
 import { generateQuizFromContent } from './services/geminiService';
 import { decodeQuizFromUrl, SharedQuizPackage } from './utils/shareUtils';
-import { Download, History, BrainCircuit, Copy, Check, Share2 } from 'lucide-react';
+import { Download, History, BrainCircuit, Copy, Check, Share2, Key } from 'lucide-react';
 
 const App: React.FC = () => {
   // --- State ---
@@ -33,6 +34,7 @@ const App: React.FC = () => {
   // New state for modals and student mode
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [studentQuizPackage, setStudentQuizPackage] = useState<SharedQuizPackage | null>(null);
 
   // --- Effects ---
@@ -99,7 +101,11 @@ const App: React.FC = () => {
       localStorage.setItem('quizHistory', JSON.stringify(newHistory));
 
     } catch (err: any) {
-      setError(err.message || "Đã xảy ra lỗi không xác định.");
+      const errMsg = err.message || "Đã xảy ra lỗi không xác định.";
+      setError(errMsg);
+      if (errMsg.includes("API Key") || !getUserApiKey()) {
+        setIsApiKeyModalOpen(true);
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -218,18 +224,29 @@ const App: React.FC = () => {
                 </div>
             </div>
 
-            <button 
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setIsApiKeyModalOpen(true)}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100/80 text-amber-900 border border-amber-300/80 font-bold transition-all text-xs shadow-xs active:scale-95"
+                title="Cấu hình API Key cá nhân để sử dụng ứng dụng"
+              >
+                <Key className="w-4 h-4 text-amber-600" />
+                <span>{getUserApiKey() ? 'API Key: Đã lưu' : 'Dán API tại đây'}</span>
+              </button>
+
+              <button 
                 onClick={() => setIsHistoryModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/70 hover:bg-white/90 text-slate-800 font-semibold transition-colors border border-white/50 shadow-sm active:scale-95 backdrop-blur-sm"
-            >
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/70 hover:bg-white/90 text-slate-800 font-semibold transition-colors border border-white/50 shadow-sm active:scale-95 backdrop-blur-sm text-xs"
+              >
                 <History className="w-4 h-4" />
                 <span className="hidden sm:inline">Lịch sử</span>
                 {history.length > 0 && (
-                    <span className="bg-slate-200/80 text-slate-700 text-xs px-2 py-0.5 rounded-full font-bold shadow-inner">
-                        {history.length}
-                    </span>
+                  <span className="bg-slate-200/80 text-slate-700 text-xs px-2 py-0.5 rounded-full font-bold shadow-inner">
+                    {history.length}
+                  </span>
                 )}
-            </button>
+              </button>
+            </div>
         </div>
       </header>
 
@@ -353,6 +370,11 @@ const App: React.FC = () => {
         grade={config.grade}
         lessonName={config.lessonName}
         onOpenStudentView={openStudentPreview}
+      />
+
+      <ApiKeyModal
+        isOpen={isApiKeyModalOpen}
+        onClose={() => setIsApiKeyModalOpen(false)}
       />
     </div>
   );

@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import cors from 'cors';
 import { createServer as createViteServer } from 'vite';
+import { GoogleGenAI, Type, Schema } from "@google/genai";
 
 // In-memory quiz store (maps short 6-character code to quiz package)
 interface QuizStoreItem {
@@ -15,7 +16,6 @@ interface QuizStoreItem {
 
 const quizStore = new Map<string, QuizStoreItem>();
 
-// Helper to generate a random 6-character short code (e.g. "aX9k2P")
 function generateShortCode(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let code = '';
@@ -25,12 +25,152 @@ function generateShortCode(): string {
   return code;
 }
 
+const SYSTEM_INSTRUCTION = `
+Bạn là một giáo viên chuyên gia của Việt Nam, am hiểu sâu sắc Chương trình Giáo dục Phổ thông 2018 (GDPT 2018).
+Nhiệm vụ của bạn là tạo ra các câu hỏi trắc nghiệm khách quan từ tài liệu được cung cấp.
+
+YÊU CẦU BẮT BUỘC:
+1. Nội dung câu hỏi phải chính xác về mặt kiến thức, phù hợp với Lớp và Môn học được yêu cầu.
+2. Phân loại mức độ nhận thức (Bloom) đúng theo cấu hình.
+3. Sử dụng định dạng LaTeX cho TẤT CẢ các công thức toán học, đặt trong dấu $ đơn (ví dụ: $x^2$). TUYỆT ĐỐI KHÔNG dùng $$ (hai dấu $).
+4. Ngôn ngữ: Tiếng Việt chuẩn mực sư phạm.
+`;
+
+const normalizeMathDelimiters = (text: string): string => {
+  if (!text) return "";
+  let cleaned = text;
+  cleaned = cleaned.replace(/\$\$/g, '$');
+  cleaned = cleaned.replace(/\\\[/g, '$').replace(/\\\]/g, '$');
+  cleaned = cleaned.replace(/\\\(/g, '$').replace(/\\\)/g, '$');
+  return cleaned;
+};
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(cors());
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({ limit: '20mb' }));
+
+  // API Route: Generate quiz via Gemini server-side
+  app.post('/api/generate-quiz', async (req, res) => {
+    try {
+      const { promptText, fileParts, optionCount, isTrueFalse, userApiKey } = req.body;
+      const apiKey = userApiKey || process.env.GEMINI_API_KEY || process.env.API_KEY;
+
+      if (!apiKey) {
+        return res.status(400).json({ error: 'Chưa có API Key. Vui lòng bấm "Cấu hình API Key" ở góc trên ứng dụng để nhập API Key cá nhân của bạn.' });
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+
+      const optCount = optionCount || 4;
+      const optionKeys = Array.from({ length: optCount }, (_, i) => String.fromCharCode(65 + i));
+
+      const dynamicQuizSchema: Schema = {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            id: { type: Type.INTEGER },
+            question_content: { type: Type.STRING },
+            options: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  key: { type: Type.STRING, enum: optionKeys },
+                  text: { type: Type.STRING }
+                },
+                required: ["key", "text"]
+              }
+            },
+            correct_answer: { type: Type.STRING, enum: optionKeys },
+            level: { type: Type.STRING },
+          },
+          required: ["id", "question_content", "options", "correct_answer", "level"]
+        }
+      };
+
+      const primaryModel = 'gemini-3-pro-preview';
+      const fallbackModel = 'gemini-3-flash-preview';
+
+      const callModel = async (modelName: string) => {
+        return await ai.models.generateContent({
+          model: modelName,
+          contents: {
+            parts: [...(fileParts || []), { text: promptText }]
+          },
+          config: {
+            systemInstruction: SYSTEM_INSTRUCTION,
+            responseMimeType: "application/json",
+            responseSchema: dynamicQuizSchema,
+            temperature: 0.4,
+          }
+        });
+      };
+
+      let responseText: string | undefined;
+      try {
+        const primaryRes = await callModel(primaryModel);
+        responseText = primaryRes.text;
+      } catch (e) {
+        console.warn('Primary model failed in server proxy, trying fallback model...', e);
+        const fallbackRes = await callModel(fallbackModel);
+        responseText = fallbackRes.text;
+      }
+
+      if (!responseText) {
+        return res.status(500).json({ error: 'Không nhận được phản hồi từ AI.' });
+      }
+
+      const rawQuestions = JSON.parse(responseText);
+
+      const questions = rawQuestions.map((q: any) => {
+        let processedOptions = q.options.map((opt: any) => ({
+          ...opt,
+          text: normalizeMathDelimiters(opt.text)
+        }));
+
+        let correctAnswerKey = q.correct_answer;
+
+        if (!isTrueFalse) {
+          const optionsWithFlag = processedOptions.map((opt: any) => ({
+            ...opt,
+            isCorrect: opt.key === q.correct_answer
+          }));
+
+          for (let i = optionsWithFlag.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [optionsWithFlag[i], optionsWithFlag[j]] = [optionsWithFlag[j], optionsWithFlag[i]];
+          }
+
+          processedOptions = optionsWithFlag.map((opt: any, index: number) => {
+            const newKey = String.fromCharCode(65 + index);
+            if (opt.isCorrect) {
+              correctAnswerKey = newKey;
+            }
+            return {
+              key: newKey,
+              text: opt.text
+            };
+          });
+        }
+
+        return {
+          ...q,
+          question_content: normalizeMathDelimiters(q.question_content),
+          options: processedOptions,
+          correct_answer: correctAnswerKey
+        };
+      });
+
+      return res.json({ questions });
+    } catch (err: any) {
+      console.error('Error generating quiz on server:', err);
+      return res.status(500).json({ error: err.message || 'Lỗi khi tạo câu hỏi từ AI.' });
+    }
+  });
 
   // API Route: Save quiz and return a short code
   app.post('/api/share', (req, res) => {
